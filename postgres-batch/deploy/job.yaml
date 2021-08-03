@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  namespace: keda-with-postgresql
+  name: postgres-batch
+spec:
+  template:
+    spec:
+      containers:
+        - name: postgres-batch
+          image: postgres-batch:latest
+          imagePullPolicy: Never
+          env:
+            - name: PG_HOST
+              value: "my-release-postgresql"
+            - name: PG_PORT
+              value: "5432"
+            - name: PG_USERNAME
+              value: "postgres"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: my-release-postgresql
+                  key: postgresql-password
+            - name: PG_DATABASE
+              value: postgres
+      restartPolicy: Never
+  backoffLimit: 4

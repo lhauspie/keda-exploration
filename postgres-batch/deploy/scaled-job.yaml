@@ -1,0 +1,44 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledJob
+metadata:
+  namespace: keda-with-postgresql
+  name: postgres-batch
+spec:
+  jobTargetRef:
+    template:
+      spec:
+        containers:
+          - name: postgres-batch
+            image: postgres-batch:latest
+            imagePullPolicy: Never
+            env:
+              - name: PG_HOST
+                value: "my-release-postgresql"
+              - name: PG_PORT
+                value: "5432"
+              - name: PG_USERNAME
+                value: "postgres"
+              - name: PGPASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: my-release-postgresql
+                    key: postgresql-password
+              - name: PG_DATABASE
+                value: postgres
+        restartPolicy: Never
+    backoffLimit: 4
+  pollingInterval: 30             # Optional. Default: 30 seconds
+  maxReplicaCount: 30             # Optional. Default: 100
+  successfulJobsHistoryLimit: 10  # Optional. Default: 100. How many completed jobs should be kept.
+  failedJobsHistoryLimit: 5       # Optional. Default: 100. How many failed jobs should be kept.
+  triggers:
+    - type: postgresql
+      metadata:
+        userName: "postgres"
+        passwordFromEnv: PGPASSWORD
+        host: my-release-postgresql.keda-with-postgresql.svc.cluster.local #use the cluster-wide namespace as KEDA lives in a different namespace from your postgres
+        port: "5432"
+        dbName: "postgres"
+        sslmode: disable
+        query: "SELECT COUNT(1) FROM make_it_clap LEFT JOIN clap ON make_it_clap.id = clap.id WHERE clap.status IS NULL;"
+        targetQueryValue: "1"

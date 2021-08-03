@@ -1,0 +1,126 @@
+
+CREATE TABLE IF NOT EXISTS clap (
+    id integer PRIMARY KEY,
+    status varchar(20) NOT NULL,
+    session_id bigint NOT NULL,
+    creation_date date NOT NULL,
+    creation_time time NOT NULL,
+    end_time ,
+    CONSTRAINT clap_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS make_it_clap (
+    id SERIAL PRIMARY KEY,
+    duration_seconds integer NOT NULL
+);
+
+
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+
+
+INSERT INTO clap VALUES (1, 'SUCCESS', 456);
+INSERT INTO clap VALUES (2, 'FAILED', 09875435);
+INSERT INTO clap VALUES (3, 'SUCCESS', 289374);
+
+
+------> VOIR LA LISTE DES TACHES EN ATTENTE
+SELECT make_it_clap.id
+FROM make_it_clap
+LEFT JOIN clap
+ON make_it_clap.id = clap.id
+WHERE clap.status IS NULL
+ORDER BY make_it_clap.id asc;
+
+
+------> SÉLECTIONNE LA PREMIERE TACHE MISE EN ATTENTE
+SELECT make_it_clap.id
+FROM make_it_clap
+LEFT JOIN clap
+ON make_it_clap.id = clap.id
+WHERE clap.status IS NULL
+ORDER BY make_it_clap.id asc
+LIMIT 1;
+
+
+------> ATTENDRE UNE CERTAINE DURÉE
+SELECT pg_sleep(duration_seconds), id
+FROM make_it_clap
+LEFT JOIN clap ON make_it_clap.id = clap.id
+  AND clap.id IS NULL;
+
+
+
+------> COMPTER LE NOMBRE DE TACHE A EXÉCUTER
+SELECT COUNT(1)
+FROM make_it_clap
+LEFT JOIN clap
+ON make_it_clap.id = clap.id
+WHERE clap.status IS NULL
+ORDER BY make_it_clap.id asc;
+
+
+------> RÉCUPÉRER LE MOT DE PASSE POSTGRES
+export POSTGRES_PASSWORD=$(kubectl get secret --namespace keda-with-postgresql my-release-postgresql -o jsonpath="{.data.postgresql-password}" | base64 --decode)
+
+------> EXÉCUTER CLIENT POSTGRES
+kubectl run my-release-postgresql-client --rm --tty -i --restart='Never' --namespace keda-with-postgresql --image docker.io/bitnami/postgresql:11.12.0-debian-10-r44 --env="PGPASSWORD=$POSTGRES_PASSWORD" --command -- psql --host my-release-postgresql -U postgres -d postgres -p 5432
+
