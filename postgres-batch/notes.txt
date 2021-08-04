@@ -1,21 +1,30 @@
+------> RÉCUPÉRER LE MOT DE PASSE POSTGRES
+export POSTGRES_PASSWORD=$(kubectl get secret --namespace keda-with-postgresql my-release-postgresql -o jsonpath="{.data.postgresql-password}" | base64 --decode)
 
+------> EXÉCUTER CLIENT POSTGRES
+kubectl run my-release-postgresql-client --rm --tty -i --restart='Never' --namespace keda-with-postgresql --image docker.io/bitnami/postgresql:11.12.0-debian-10-r44 --env="PGPASSWORD=$POSTGRES_PASSWORD" --command -- psql --host my-release-postgresql -U postgres -d postgres -p 5432
+
+drop table clap;
 CREATE TABLE IF NOT EXISTS clap (
-    id integer PRIMARY KEY,
+    id integer NOT NULL,
     status varchar(20) NOT NULL,
     session_id bigint NOT NULL,
     creation_date date NOT NULL,
     creation_time time NOT NULL,
-    end_time ,
+    end_time time,
+    job_name varchar(50) NOT NULL,
+    iteration integer DEFAULT 0,
     CONSTRAINT clap_pkey PRIMARY KEY (id)
 );
 
+drop table make_it_clap;
 CREATE TABLE IF NOT EXISTS make_it_clap (
     id SERIAL PRIMARY KEY,
+    took_by varchar(50),
     duration_seconds integer NOT NULL
 );
 
-
-INSERT INTO make_it_clap (duration_seconds) VALUES (60);
+INSERT INTO make_it_clap (duration_seconds) VALUES (10);
 INSERT INTO make_it_clap (duration_seconds) VALUES (60);
 INSERT INTO make_it_clap (duration_seconds) VALUES (60);
 INSERT INTO make_it_clap (duration_seconds) VALUES (60);
@@ -117,10 +126,4 @@ ON make_it_clap.id = clap.id
 WHERE clap.status IS NULL
 ORDER BY make_it_clap.id asc;
 
-
-------> RÉCUPÉRER LE MOT DE PASSE POSTGRES
-export POSTGRES_PASSWORD=$(kubectl get secret --namespace keda-with-postgresql my-release-postgresql -o jsonpath="{.data.postgresql-password}" | base64 --decode)
-
-------> EXÉCUTER CLIENT POSTGRES
-kubectl run my-release-postgresql-client --rm --tty -i --restart='Never' --namespace keda-with-postgresql --image docker.io/bitnami/postgresql:11.12.0-debian-10-r44 --env="PGPASSWORD=$POSTGRES_PASSWORD" --command -- psql --host my-release-postgresql -U postgres -d postgres -p 5432
 

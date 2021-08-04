@@ -31,7 +31,7 @@ $ minikube start
 ✨  Utilisation du pilote docker basé sur le profil existant
 👍  Démarrage du noeud de plan de contrôle minikube dans le cluster minikube
 🚜  Extraction de l'image de base...
-🔄  Redémarrage du docker container existant pour "minikube" ...
+🔥  Création de docker container (CPUs=2, Memory=1987Mo) ...
 🐳  Préparation de Kubernetes v1.21.2 sur Docker 20.10.7...
 🔎  Vérification des composants Kubernetes...
     ▪ Utilisation de l'image kubernetesui/dashboard:v2.1.0
@@ -50,7 +50,7 @@ $ minikube dashboard
 🎉  Ouverture de http://127.0.0.1:51094/api/v1/namespaces/kubernetes-dashboard/services/http:kubernetes-dashboard:/proxy/ dans votre navigateur par défaut...
 ```
 
-Arreter minikube :
+Arrêter minikube :
 ```zsh
 $ minikube stop
 ✋  Nœud d'arrêt "minikube" ...
@@ -166,7 +166,12 @@ replicaset.apps/keda-operator-metrics-apiserver-57fc85685f   1         1        
 
 Ces différents composants vont nous permettre de déployer de nouveau composants nommés [ScaledObject](https://keda.sh/docs/2.3/concepts/scaling-deployments/) et [ScaledJob](https://keda.sh/docs/2.3/concepts/scaling-jobs/) qui vont eux piloter l'autoscaling des pods qu'ils soient des "Deployments", des "StatefulSets", des "Custom Resources" ou des "Jobs".
 
-Et celui qui nous interesse aujourd'hui est l'autoscaling des "Jobs" pour pouvoir traiter potentiellement un nombre très variable de Batches en parallèle.
+Et celui qui nous intéresse aujourd'hui est l'autoscaling des "Jobs" pour pouvoir traiter potentiellement un nombre très variable de Batches en parallèle.
+
+Petit commande bien utile pour débugger quand Keda n'arrive pas à faire son office :
+```zsh
+$ kubectl logs -f -n keda keda-operator-7fc5699d47-q6zxj -c keda-operator
+```
 
 ## Passons aux choses sérieuses
 
@@ -231,6 +236,8 @@ Il aura la lourde tâche d'ajouter une ligne au status "RUNNING" dans une table 
 Pour les besoins du test de Keda avec le Scaler PostgreSQL, je vais aussi créer une table `make_it_clap` pour "piloter" le scaling.
 Elle contiendra une colonne `duration_seconds` qui permettra de spécifier le temps d'un `clap` pour bien voir le scaling se mettre en place.
 
+Cette première version est disponible dans [v1/make-it-clap.sql](postgres-batch/scripts/v1/make-it-clap.sql).
+
 Étant donné que je souhaite que tout se fasse en local, je ne veux pas avoir à push mon image docker sur une registry publique.
 Pour éviter ça, il est possible de faire en sorte que notre shell pointe sur le deamon docker de minikube.
 Aisni, lors d'un `docker build`, l'image résulante ira dans le cache locale de minikube, ce qui lui permettra d'utiliser l'image docker sans faire de pull.
@@ -265,15 +272,15 @@ postgres-batch   1/1           42s        121m
 ```
 - Controller que le batch s'est correctement déroulé : `SELECT * FROM clap;`
 ```
- id | status  | session_id | creation_date | creation_time
-----+---------+------------+---------------+----------------
-  1 | SUCCESS |   49918852 | 2021-08-02    | 12:10:23.14951
+ id | status  | session_id | creation_date | creation_time   |    end_time
+----+---------+------------+---------------+-----------------+-----------------
+  1 | SUCCESS |   49918852 | 2021-08-02    | 12:10:23.14951  | 12:11:03.751734
 (1 row)
 ```
 
 ## Passage à l'échelle avec Keda
 
-Il est maintenant l'heure de faire passer notre Job à l'échelle en déléguant le pilotage à Keda.
+Il est maintenant l'heure de faire passer notre Job à l'échelle en déléguant le pilotage du scaling à Keda.
 
 Keda permet de piloter le nombre de `Jobs` à executer sur base d'une requête SQL executée à interval de temps régulier.
 
@@ -344,13 +351,10 @@ Comme d'habitude, on déploie le `ScaledJob` avec la commande :
 $ kubectl apply -f deploy/scaled-job.yaml
 ```
 
-Ok, maintenant que le ScaledJob est déployé, le principe est plutôt simple, on doit insérer des lignes dans la table `make_it_clap` pour éxecuter les Jobs :
+Ok, maintenant que le `ScaledJob` est déployé, le principe est plutôt simple, on doit insérer des lignes dans la table `make_it_clap` pour éxecuter les Jobs :
 ```SQL
-CREATE TABLE IF NOT EXISTS make_it_clap (
-    id integer NOT NULL,
-    duration_seconds integer NOT NULL,
-    CONSTRAINT make_it_clap_pkey PRIMARY KEY (id)
-);
+-- répété 60 fois
+INSERT INTO make_it_clap (duration_seconds) VALUES (40);
 ```
 
 On peut surveiller l'évolution des `Jobs` :
@@ -366,12 +370,12 @@ postgres-batch-zklk2   0/1           10s        10s
 ainsi que celle des `claps` :
 ```SQL
 postgres=# select * from clap;
- id | status  | session_id | creation_date |  creation_time
-----+---------+------------+---------------+-----------------
-  1 | RUNNING |  333443748 | 2021-08-02    | 16:17:41.28766
-  2 | RUNNING |  637700789 | 2021-08-02    | 16:17:46.266496
+ id | status  | session_id | creation_date |  creation_time  |    end_time
+----+---------+------------+---------------+-----------------+-----------------
+  1 | RUNNING |  333443748 | 2021-08-02    | 16:17:41.28766  |
+  2 | RUNNING |  637700789 | 2021-08-02    | 16:17:46.266496 |
 [...]
- 30 | RUNNING |  752837758 | 2021-08-02    | 16:18:29.902603
+ 30 | RUNNING |  752837758 | 2021-08-02    | 16:18:29.902603 |
 ```
 
 Au bout d'un certain temps, on voit que de nouveaux `Jobs` prennent la suite quand les premiers `Jobs` se terminent :
@@ -389,27 +393,156 @@ postgres-batch-4nc8p   0/1           5s         5s
 ainsi que les `claps` qui s'executent :
 ```SQL
 select * from clap ORDER BY id;
- id | status  | session_id | creation_date |  creation_time
-----+---------+------------+---------------+-----------------
-  1 | SUCCESS |  333443748 | 2021-08-02    | 16:17:41.28766
-  2 | SUCCESS |  637700789 | 2021-08-02    | 16:17:46.266496
-  3 | SUCCESS |   45350398 | 2021-08-02    | 16:17:47.881485
+ id | status  | session_id | creation_date |  creation_time  |    end_time
+----+---------+------------+---------------+-----------------+-----------------
+  1 | SUCCESS |  333443748 | 2021-08-02    | 16:17:41.28766  | 16:18:21.839829
+  2 | SUCCESS |  637700789 | 2021-08-02    | 16:17:46.266496 | 16:18:27.084621
+  3 | SUCCESS |   45350398 | 2021-08-02    | 16:17:47.881485 | 16:18:28.256152
 [...]
- 11 | RUNNING |  596834214 | 2021-08-02    | 16:17:53.469475
- 12 | RUNNING |  154339869 | 2021-08-02    | 16:17:53.566302
+ 11 | RUNNING |  596834214 | 2021-08-02    | 16:17:53.469475 | 
+ 12 | RUNNING |  154339869 | 2021-08-02    | 16:17:53.566302 | 
 [...]
- 31 | RUNNING |  752837758 | 2021-08-02    | 16:18:54.986443
+ 31 | RUNNING |  752837758 | 2021-08-02    | 16:18:54.986443 | 
 ```
 
+OK, on voit que ça fonctionne plutôt bien, ce qui est une bonne chose, qu'on se le dise.
 
 
+## Gestion de l'échec d'un `Job`
 
+Je me demande maintenant comment on gère les échecs... Que se passe-t-il quand le `Job` est en échec ?
+Dans la doc, il n'est pas indiqué qu'il faille faire quoi que ce soit pour gérer les échecs, seulement la propriété `backoffLimit` du kind `Job` de Kubernetes qui semble permettre le rejeu en cas d'erreur.
 
+Voyons donc comment tout ça va se comporter en cas d'erreur.
+Pour ce faire, je modifie un peu mes scripts :
+- `make-it-clap.sql` pour enregistrer le `status` en fonction de la variable d'environnement `FINAL_STATE`
+- `entrypoint.sh` pour faire échouer le `Job` en fonction de cette même variable d'environnement
+- `scaled-job.yaml` pour set la variable d'environnement
 
+Cette seconde version du batch est consultable dans [v2/make-it-clap.sql](postgres-batch/scripts/v2/make-it-clap.sql).
 
+On relance le tout :
+```zsh
+$ docker build . -t postgres-batch:latest 
+$ kubectl replace --force -f deploy/scaled-job.yaml
+INSERT INTO make_it_clap (duration_seconds) VALUES (1);
+```
+Et là... c'est le drame !
 
+Le job se relance bien comme indiqué par la propriété `.spec.jobTargetRef.template.spec.backoffLimit` :
+```zsh
+$ kubectl describe jobs.batch postgres-batch-vqhs7
+Events:
+  Type     Reason                Age   From            Message
+  ----     ------                ----  ----            -------
+  Normal   SuccessfulCreate      16m   job-controller  Created pod: postgres-batch-vqhs7-8p7nx
+  Normal   SuccessfulCreate      16m   job-controller  Created pod: postgres-batch-vqhs7-mf4z9
+  Normal   SuccessfulCreate      15m   job-controller  Created pod: postgres-batch-vqhs7-4cwdz
+  Normal   SuccessfulCreate      15m   job-controller  Created pod: postgres-batch-vqhs7-cg48m
+  Normal   SuccessfulCreate      14m   job-controller  Created pod: postgres-batch-vqhs7-tbfjc
+  Warning  BackoffLimitExceeded  13m   job-controller  Job has reached the specified backoff limit
+```
+Mais il y a un "mais"... le job ne prend le `clap` à effectuer qu'une seule fois lors de la première tentative d'execution du pod :
 
+Première tentative :
+```zsh
+$ kubectl logs postgres-batch-vqhs7-8p7nx 
+Running the sql script
+[...]
+ id | duration_seconds | id | status | session_id | creation_date | creation_time | end_time 
+----+------------------+----+--------+------------+---------------+---------------+----------
+  3 |                1 |    |        |            |               |               | 
+(1 row)
+[...]
+UPDATE 1
+Everything's failed
+```
 
+Seconde tentative :
+```zsh
+$ kubectl logs postgres-batch-vqhs7-mf4z9 
+Running the sql script
+[...]
+ id | duration_seconds | id | status | session_id | creation_date | creation_time | end_time 
+----+------------------+----+--------+------------+---------------+---------------+----------
+(0 rows)
+[...]
+UPDATE 0
+Everything's failed
+```
+
+Il faudrait donc que le batch soit fault-tolerant afin de reprendre le `clap` ayant échoué 🤔.
+
+La première solution qui me vient en tête est de modifier la requête de pilotage du scaling pour inclure les `claps` au status `FAILED` mais cela risque fort d'engendrer un scaling infinie si le `clap` ne passe jamais à `SUCCESS` pour quelque raison que ce soit.
+Ce qui, vous le conviendrait, serait une petite cata pour nos amis les FinOps.
+
+Une approche trop simpliste pourrait également rendre le debugging (en phase de RUN) très complexe car un `Job` pourrait se mettre à traiter des `claps` différents entre 2 retry.
+
+Je ne sais pas si c'est la meilleure des solutions, mais c'est une solution qui a fonctionnée dans le cas d'un script PostgreSQL relativement simple.
+Je n'ai finalement pas modifié la requête SQL de pilotage du scaling mais j'ai pas mal modifié le script sql pour affecter le nom du `Job` au `clap` à traiter, ainsi d'un retry à l'autre, ce sera le même `clap` qui sera effectué pour un `Job` donné.
+
+Et pour bien voir les changements de status, le script échouera les 3 premières fois pour ensuite aboutir la 4ème fois.
+
+On re-relance le tout :
+```zsh
+$ docker build . -t postgres-batch:latest 
+$ kubectl replace --force -f deploy/scaled-job.yaml
+INSERT INTO make_it_clap (duration_seconds) VALUES (10);
+```
+
+on scrute la création des pods :
+```zsh
+$ kubectl get pods
+NAME                           READY   STATUS      RESTARTS   AGE
+my-release-postgresql-0        1/1     Running     0          3h12m
+my-release-postgresql-client   1/1     Running     0          97m
+postgres-batch-mqmg7-6d7bb     0/1     Error       0          48s
+postgres-batch-mqmg7-gsj54     0/1     Error       0          81s
+postgres-batch-mqmg7-h2z24     0/1     Error       0          69s
+postgres-batch-mqmg7-v9hqc     0/1     Completed   0          28s
+```
+Et on voit que 3 tentatives sont en erreur alors que la 4éme s'est passée correctement.
+
+En scrutant les `claps` dans postgres pendant l'execution, on voit les changements de status ainsi que le nombre d'itérations se mettre à jour :
+```zsh
+postgres=# select * from clap;
+ id | status  | session_id | creation_date | creation_time  |    end_time     | iteration
+----+---------+------------+---------------+----------------+-----------------+-----------
+  1 | FAILED  |  650018425 | 2021-08-04    | 01:53:09.68744 | 01:53:19.693264 |         1
+(1 row)
+...
+  1 | RUNNING |   14628382 | 2021-08-04    | 01:53:09.68744 | 01:53:19.693264 |         1
+(1 row)
+...
+  1 | FAILED  |   14628382 | 2021-08-04    | 01:53:09.68744 | 01:53:31.482351 |         2
+(1 row)
+...
+  1 | RUNNING |   66819766 | 2021-08-04    | 01:53:09.68744 | 01:53:31.482351 |         2
+(1 row)
+...
+  1 | FAILED  |   66819766 | 2021-08-04    | 01:53:09.68744 | 01:53:52.541976 |         3
+(1 row)
+...
+  1 | RUNNING |  799850712 | 2021-08-04    | 01:53:09.68744 | 01:53:52.541976 |         3
+(1 row)
+...
+  1 | SUCCESS |  799850712 | 2021-08-04    | 01:53:09.68744 | 01:54:12.601349 |         4
+(1 row)
+```
+
+Pour être tout à fait honnête, je ne suis pas vraiment satisfait de la solution finale qui consiste à mettre le nom du `Job` dans la table `make-it-clap`.
+
+## Conclusion
+
+Biensur, je n'ai exploré là que la partie batch sur base du Scaler PostgreSQL et il est possible de scale d'autres composants Kubernetes en utilisant d'autres Scalers, 
+mais Keda semble déjà être une bonne solution de scaling en fonction de métrique autre que les CPU et autre consommation mémoire.
+Il vient avec son lot de contraintes mais elles sont surmontables et surtout incontournables quand on conçoit un tel système tolérant aux pannes.
+Il faut toujours garder en tête que certaines taches risquent d'échouer en concidérant qu'elles vont échouer à coup sûr.
+
+Le fait de tout devoir gérer manuellement pour rendre les Jobs tolérants aux pannes est très probablement dû au fait que je me soit limité à utiliser des scripts SQL pour faire simple.
+Je suis convaincu qu'en utilisant des outils/frameworks, comme Spring Batch par exemple, tout se passerait beaucoup mieux.
+
+Je ferais dans un prochain billet la même experience avec ce framework pour challenger cette conclusion.
 
 
 .

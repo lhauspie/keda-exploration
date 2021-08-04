@@ -5,6 +5,8 @@ metadata:
   name: postgres-batch
 spec:
   jobTargetRef:
+    parallelism: 1
+    completions: 1
     template:
       spec:
         containers:
@@ -25,12 +27,17 @@ spec:
                     key: postgresql-password
               - name: PG_DATABASE
                 value: postgres
+              - name: POD_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.name
         restartPolicy: Never
     backoffLimit: 4
   pollingInterval: 30             # Optional. Default: 30 seconds
   maxReplicaCount: 30             # Optional. Default: 100
   successfulJobsHistoryLimit: 10  # Optional. Default: 100. How many completed jobs should be kept.
   failedJobsHistoryLimit: 5       # Optional. Default: 100. How many failed jobs should be kept.
+
   triggers:
     - type: postgresql
       metadata:

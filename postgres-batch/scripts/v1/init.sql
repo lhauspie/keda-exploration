@@ -4,13 +4,10 @@ CREATE TABLE IF NOT EXISTS clap (
     session_id bigint NOT NULL,
     creation_date date NOT NULL,
     creation_time time NOT NULL,
-    end_time time,
-    iteration integer DEFAULT 0,
     CONSTRAINT clap_pkey PRIMARY KEY (id)
 );
 
 CREATE TABLE IF NOT EXISTS make_it_clap (
     id SERIAL PRIMARY KEY,
-    duration_seconds integer NOT NULL,
-    job_name varchar(50)
+    duration_seconds integer NOT NULL
 );
